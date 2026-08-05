@@ -1,0 +1,1013 @@
+RELATÓRIO DE ANÁLISE E GUIA DE RECONSTRUÇÃO DO PROJETO JDBC
+====================================================================
+
+Projeto analisado: projEBAC3-SQL
+Data da análise: 04/08/2026
+Escopo: análise estática do código, sem alteração dos arquivos existentes e sem
+execução dos testes que escrevem no PostgreSQL.
+
+
+1. OBJETIVO DESTE RELATÓRIO
+--------------------------------------------------------------------
+
+Este documento descreve:
+
+1) como o projeto atual está organizado e como ele funciona;
+2) seus pontos positivos;
+3) problemas e riscos encontrados;
+4) como criar um projeto equivalente, do zero e passo a passo;
+5) como melhorar a fatoração da camada JDBC;
+6) como acrescentar as camadas service e controller;
+7) como testar a nova arquitetura com segurança.
+
+A persistência proposta continua 100% baseada em JDBC. Não são usados JPA,
+Hibernate, Spring Data ou qualquer ORM. Controller e service também podem ser
+implementados com Java puro. O único componente obrigatório de persistência é o
+driver JDBC do PostgreSQL.
+
+
+2. RESUMO DO PROJETO ATUAL
+--------------------------------------------------------------------
+
+O projeto é uma aplicação Maven em Java 17 voltada ao estudo de CRUD com JDBC e
+PostgreSQL. Existem duas entidades:
+
+- Cliente: id, código e nome;
+- Produto: id, nome, código, preço, estoque e indicador de disponibilidade.
+
+O projeto possui:
+
+- uma fábrica de conexões;
+- uma interface DAO genérica;
+- uma classe DAO abstrata;
+- um DAO concreto para Cliente;
+- um DAO concreto para Produto;
+- scripts SQL para criar tabelas e sequências;
+- testes JUnit que executam operações reais no banco;
+- uma classe com.fabioperettig.Main ainda vazia.
+
+Fluxo atual de uma operação:
+
+Teste -> ClienteDAO/ProdutoDAO -> ConnectionFactory -> JDBC -> PostgreSQL
+
+No cadastro, o DAO também tenta executar o arquivo SQL da entidade antes do
+INSERT. As camadas service e controller ainda não existem no código, embora a
+service seja mencionada na árvore do README.
+
+
+3. ESTRUTURA ATUAL OBSERVADA
+--------------------------------------------------------------------
+
+src/main/java
+|-- com.fabioperettig.Main.java
+`-- projEBAC3
+    |-- factory
+    |   `-- ConnectionFactory.java
+    `-- jdbc
+        |-- dao
+        |   |-- InterfaceDAO.java
+        |   |-- AbstractDAO.java
+        |   |-- ClienteDAO.java
+        |   `-- ProdutoDAO.java
+        `-- domain
+            |-- Cliente.java
+            `-- Produto.java
+
+src/main/resources
+|-- config
+|   `-- database.properties
+`-- database
+    |-- schemaCliente.sql
+    `-- schemaProduto.sql
+
+src/test/java/projEBAC3test
+|-- ClienteTest.java
+|-- ProdutoTest.java
+`-- SuiteTest.java
+
+
+4. PONTOS POSITIVOS DO PROJETO ATUAL
+--------------------------------------------------------------------
+
+4.1. JDBC explícito
+
+O código deixa visíveis Connection, PreparedStatement e ResultSet. Isso é muito
+útil para aprender o funcionamento real da persistência sem a intermediação de
+um ORM.
+
+4.2. Uso de PreparedStatement
+
+Os valores recebidos são associados por parâmetros, em vez de concatenados ao
+SQL. Isso reduz risco de SQL injection e trata tipos de forma adequada.
+
+4.3. Separação inicial por responsabilidade
+
+Entidades, DAOs, conexão, recursos SQL e testes já se encontram em locais
+distintos. A base para uma arquitetura em camadas existe.
+
+4.4. Contrato genérico de CRUD
+
+InterfaceDAO<T> define as operações comuns e permite que ClienteDAO e ProdutoDAO
+sejam usados por meio de um contrato.
+
+4.5. Primeira fatoração com AbstractDAO<T>
+
+Consultas compartilhadas, parâmetros de busca e encerramento de recursos foram
+movidos para uma superclasse. A intenção de aplicar DRY é correta.
+
+4.6. Restrições no banco
+
+As tabelas têm chave primária e código único. Isso protege a integridade mesmo
+quando uma validação da aplicação falha.
+
+4.7. Segredos fora do Git
+
+O arquivo .env está ignorado pelo .gitignore e não é versionado.
+
+
+5. PROBLEMAS, RISCOS E OPORTUNIDADES DE MELHORIA
+--------------------------------------------------------------------
+
+5.1. Conexão global compartilhada (prioridade alta)
+
+ConnectionFactory mantém uma única Connection estática. Cada DAO recebe essa
+mesma conexão e a fecha ao terminar. Na chamada seguinte, a fábrica precisa
+reabri-la.
+
+Consequências:
+
+- o singleton não traz economia real, porque a conexão é fechada após o uso;
+- duas operações simultâneas podem compartilhar e fechar a mesma conexão;
+- uma transação de service não consegue controlar várias operações com clareza;
+- estado global dificulta testes e injeção de dependências.
+
+Melhoria proposta: a fábrica pode ser um objeto simples e imutável, mas cada
+chamada a getConnection() deve retornar uma nova Connection. A operação que
+abre a conexão deve ser sua proprietária e fechá-la com try-with-resources.
+
+5.2. Fechamento manual de recursos (prioridade alta)
+
+closeConnection tenta fechar ResultSet, PreparedStatement e Connection e apenas
+imprime uma exceção de fechamento. O Java já oferece try-with-resources, que é
+mais curto, seguro e preserva exceções suprimidas.
+
+Melhoria proposta:
+
+try (Connection connection = connectionFactory.getConnection();
+     PreparedStatement statement = connection.prepareStatement(sql)) {
+    // execução
+}
+
+O ResultSet também deve entrar em seu próprio try-with-resources.
+
+5.3. Fatoração incompleta dos DAOs (prioridade média/alta)
+
+AbstractDAO centraliza fragmentos SQL, mas ClienteDAO e ProdutoDAO ainda repetem
+quase integralmente cadastrar, atualizar, buscar, buscarTodos e excluir. O que
+realmente varia entre as entidades é:
+
+- o texto SQL;
+- a associação dos parâmetros;
+- a conversão de uma linha do ResultSet em objeto.
+
+Melhoria proposta: a classe base deve controlar o algoritmo JDBC e oferecer
+métodos abstratos somente para SQL, bind de parâmetros e mapRow. Não se deve
+forçar nela consultas específicas de uma entidade.
+
+5.4. Criação do schema dentro do cadastro (prioridade alta)
+
+O schema é executado somente em cadastrar(). Se a primeira ação da aplicação
+for buscar(), atualizar() ou excluir(), a tabela pode não existir. Além disso,
+DDL é relido e reenviado em cada cadastro.
+
+Melhoria proposta: criar SchemaInitializer e executá-lo uma única vez na
+inicialização da aplicação, antes de montar services e controllers. Os DAOs
+devem cuidar apenas de dados, não da estrutura do banco.
+
+5.5. Configuração duplicada e inconsistente (prioridade alta)
+
+ConnectionFactory lê DB_URL, DB_USER e DB_PASSWORD por dotenv. Entretanto,
+database.properties contém db.url, db.username, db.password e db.driver e nunca
+é lido pelo código.
+
+Melhoria proposta: escolher uma única estratégia. A opção mais simples é ler
+variáveis de ambiente por System.getenv. Outra opção válida é carregar de fato
+database.properties, sem gravar senha real no repositório. Não manter um arquivo
+que parece ativo, mas não é usado.
+
+5.6. Exceções genéricas e tratamento inconsistente (prioridade média)
+
+Os contratos declaram throws Exception. Alguns métodos relançam a exceção,
+outros embrulham em RuntimeException, e closeConnection usa printStackTrace.
+
+Melhoria proposta: criar DataAccessException para falhas de persistência e
+exceções de negócio específicas, como EntidadeNaoEncontradaException,
+CodigoDuplicadoException e ValidacaoException. O controller não deve receber
+SQLException diretamente.
+
+5.7. Dinheiro representado por double (prioridade alta)
+
+Produto.preco é double, enquanto o banco usa DECIMAL(10,2). Valores monetários
+em ponto flutuante podem sofrer erro de precisão.
+
+Melhoria proposta: usar BigDecimal no Java, setBigDecimal no PreparedStatement
+e getBigDecimal no ResultSet.
+
+5.8. Campo emEstoque inconsistente (prioridade média)
+
+Produto contém emEstoque e a tabela contém em_estoque, mas os comandos INSERT,
+UPDATE e SELECT/mapeamento não cuidam desse campo. O valor também pode divergir
+de estoque.
+
+Melhoria recomendada: não persistir a informação duplicada. Calcular
+emEstoque como estoque > 0. Caso o campo precise existir na tabela, ele deve ser
+atualizado de forma automática e consistente, nunca depender de duas fontes de
+verdade independentes.
+
+5.9. Nullabilidade e regras insuficientes no schema (prioridade média)
+
+Preço e estoque aceitam NULL; também faltam regras que impeçam preço ou estoque
+negativos.
+
+Melhoria proposta:
+
+- preco NUMERIC(10,2) NOT NULL CHECK (preco >= 0);
+- estoque INTEGER NOT NULL DEFAULT 0 CHECK (estoque >= 0).
+
+5.10. ID não retorna ao objeto cadastrado (prioridade média)
+
+O INSERT retorna apenas a quantidade de linhas. O objeto somente recebe id se
+for buscado novamente pelo código.
+
+Melhoria proposta: omitir o ID do INSERT, pedir RETURN_GENERATED_KEYS, obter a
+chave gerada e devolvê-la no objeto ou no retorno do repositório.
+
+5.11. SELECT * e ausência de ordenação (prioridade baixa/média)
+
+SELECT * acopla o mapeamento a todas as colunas da tabela. buscarTodos() não tem
+ORDER BY, portanto a ordem não é garantida.
+
+Melhoria proposta: listar as colunas explicitamente e definir uma ordenação,
+por exemplo ORDER BY id.
+
+5.12. Contrato DAO pouco expressivo (prioridade média)
+
+buscar() retorna null quando nada é encontrado; excluir() recebe uma entidade
+inteira embora utilize apenas o código; Integer representa contagem quando a
+intenção normalmente é sucesso/falha.
+
+Melhoria proposta:
+
+- Optional<T> para buscas opcionais;
+- excluirPorId(Long id) ou excluirPorCodigo(String codigo);
+- boolean para update/delete ou entidade atualizada como retorno;
+- nomes Repository ou Dao padronizados, sem misturar estilos.
+
+5.13. Modelo e estilo inconsistentes (prioridade baixa)
+
+Cliente tem getters/setters escritos manualmente; Produto usa Lombok. Há um
+import de Cliente sem uso em InterfaceDAO. com.fabioperettig.Main está no pacote padrão. Pacotes
+Java contêm letras maiúsculas no nome projEBAC3.
+
+Melhoria proposta: escolher um único estilo, remover dependências desnecessárias
+e usar pacotes minúsculos, por exemplo com.fabioperettig.projebac3. com.fabioperettig.Main deve
+pertencer a esse pacote.
+
+5.14. Testes frágeis e dependentes do estado global (prioridade alta)
+
+Os testes usam códigos fixos e um banco real compartilhado. Se um teste falhar
+antes do DELETE, os próximos podem falhar por código duplicado. buscarTodos()
+pressupõe que não existem outros registros no banco.
+
+Também foram observados estes falsos positivos:
+
+- Produto cadastrarTest apenas confirma que o objeto criado em memória não é
+  nulo; não confirma o registro salvo;
+- Produto atualizarTest verifica o objeto já alterado em memória, sem buscar de
+  novo no banco;
+- Produto excluirTest apaga TS1S01, mas procura TS1D01, outro código;
+- Cliente atualizarTest não verifica a quantidade atualizada;
+- alguns testes contam iterações de exclusão, não linhas realmente excluídas.
+
+Melhoria proposta: separar testes unitários de service/controller dos testes de
+integração DAO, usar banco exclusivo de teste, dados únicos e limpeza garantida.
+
+5.15. Configuração JUnit fragmentada (prioridade média)
+
+O pom declara junit-jupiter-api e junit-platform-suite-api separadamente, com
+versões diferentes, e não explicita o motor Jupiter nem o Maven Surefire. Isso
+pode variar conforme a versão do Maven/plugin disponível.
+
+Melhoria proposta: alinhar toda a plataforma JUnit em uma única versão, usar a
+dependência agregadora adequada e fixar uma versão compatível do Surefire.
+SuiteTest é opcional, pois o Surefire já pode descobrir testes por convenção.
+
+
+6. ARQUITETURA RECOMENDADA PARA O NOVO PROJETO
+--------------------------------------------------------------------
+
+Fluxo principal:
+
+com.fabioperettig.Main/Menu
+   |
+   v
+Controller
+   |
+   v
+Service
+   |
+   v
+Repository/DAO (contratos)
+   ^
+   |
+Implementações JDBC -> ConnectionFactory -> PostgreSQL
+
+Responsabilidades:
+
+- domain: representa Cliente e Produto e mantém invariantes simples;
+- dto: representa entrada e saída da camada controller;
+- controller: recebe/converte dados, chama service e traduz resultados;
+- service: valida regras de negócio e coordena transações/casos de uso;
+- repository: contratos necessários pelo negócio;
+- repository.jdbc: SQL, PreparedStatement, ResultSet e mapeamento;
+- config: configuração e criação de novas conexões;
+- database: inicialização controlada do schema;
+- exception: falhas técnicas e de negócio;
+- com.fabioperettig.Main: composição manual das dependências e início da interface.
+
+Regra de dependência:
+
+- controller conhece service, mas não conhece DAO/JDBC;
+- service conhece interfaces de repository, mas não conhece SQL;
+- JDBC implementa as interfaces de repository;
+- entidades não conhecem controller, service, JDBC ou banco.
+
+
+7. ÁRVORE SUGERIDA
+--------------------------------------------------------------------
+
+src/main/java/com/fabioperettig/projebac3
+|-- com.fabioperettig.Main.java
+|-- config
+|   |-- DatabaseConfig.java
+|   `-- ConnectionFactory.java
+|-- database
+|   `-- SchemaInitializer.java
+|-- domain
+|   |-- Cliente.java
+|   `-- Produto.java
+|-- dto
+|   |-- ClienteRequest.java
+|   |-- ClienteResponse.java
+|   |-- ProdutoRequest.java
+|   `-- ProdutoResponse.java
+|-- repository
+|   |-- CrudRepository.java
+|   |-- ClienteRepository.java
+|   `-- ProdutoRepository.java
+|-- repository/jdbc
+|   |-- AbstractJdbcRepository.java
+|   |-- RowMapper.java
+|   |-- JdbcClienteRepository.java
+|   `-- JdbcProdutoRepository.java
+|-- service
+|   |-- ClienteService.java
+|   `-- ProdutoService.java
+|-- controller
+|   |-- ClienteController.java
+|   `-- ProdutoController.java
+`-- exception
+    |-- DataAccessException.java
+    |-- ValidacaoException.java
+    |-- EntidadeNaoEncontradaException.java
+    `-- CodigoDuplicadoException.java
+
+src/main/resources
+|-- database
+|   `-- schema.sql
+`-- database-example.properties (somente se essa estratégia for usada)
+
+src/test/java/com/fabioperettig/projebac3
+|-- service
+|   |-- ClienteServiceTest.java
+|   `-- ProdutoServiceTest.java
+|-- controller
+|   |-- ClienteControllerTest.java
+|   `-- ProdutoControllerTest.java
+`-- repository/jdbc
+    |-- JdbcClienteRepositoryIT.java
+    `-- JdbcProdutoRepositoryIT.java
+
+
+8. PASSO A PASSO PARA CRIAR O NOVO PROJETO
+--------------------------------------------------------------------
+
+PASSO 1 - Criar o projeto Maven
+
+Criar um projeto Java 17 com groupId e artifactId consistentes. No pom.xml:
+
+- usar maven.compiler.release = 17;
+- definir UTF-8;
+- adicionar o driver org.postgresql:postgresql;
+- adicionar JUnit em escopo test;
+- configurar Maven Surefire para executar testes unitários;
+- opcionalmente configurar Maven Failsafe para testes de integração *IT;
+- manter todas as dependências JUnit na mesma versão.
+
+Para um estudo de JDBC, Lombok não é necessário. Removê-lo torna o modelo mais
+explícito e reduz processamento de anotações. Se for mantido, usar o mesmo estilo
+em todas as entidades.
+
+PASSO 2 - Definir configuração única do banco
+
+Escolher estas variáveis:
+
+DB_URL=jdbc:postgresql://localhost:5432/projebac3
+DB_USER=postgres
+DB_PASSWORD=senha_local
+
+DatabaseConfig deve ler e validar os três valores uma vez. Não imprimir a senha
+em logs ou mensagens. Um .env local só deve existir se uma biblioteca o carregar
+ou se a IDE/exportação do shell o transformar em variáveis reais. O arquivo deve
+continuar ignorado pelo Git.
+
+Para testes, usar nomes separados:
+
+TEST_DB_URL=jdbc:postgresql://localhost:5432/projebac3_test
+TEST_DB_USER=...
+TEST_DB_PASSWORD=...
+
+Nunca executar limpeza de teste no banco de desenvolvimento/produção. Antes de
+TRUNCATE, o teste deve confirmar explicitamente que está conectado ao banco de
+teste esperado.
+
+PASSO 3 - Implementar ConnectionFactory sem conexão global
+
+A fábrica deve guardar apenas URL, usuário e senha. getConnection() chama
+DriverManager.getConnection(...) e retorna uma conexão nova.
+
+Estrutura conceitual:
+
+final class ConnectionFactory {
+    private final DatabaseConfig config;
+
+    Connection getConnection() throws SQLException {
+        return DriverManager.getConnection(
+            config.url(), config.user(), config.password());
+    }
+}
+
+Não guardar Connection em campo static. Não fechar a conexão dentro da fábrica;
+quem a abre no DAO ou no gerenciador de transação deve fechá-la.
+
+PASSO 4 - Criar o schema de forma consistente
+
+Preferir colunas e nomes SQL em snake_case. Um modelo sugerido é:
+
+tb_cliente
+- id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY
+- codigo VARCHAR(20) NOT NULL UNIQUE
+- nome VARCHAR(50) NOT NULL
+
+tb_produto
+- id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY
+- codigo VARCHAR(20) NOT NULL UNIQUE
+- nome VARCHAR(100) NOT NULL
+- preco NUMERIC(10,2) NOT NULL CHECK (preco >= 0)
+- estoque INTEGER NOT NULL DEFAULT 0 CHECK (estoque >= 0)
+
+IDENTITY dispensa criar e chamar sequências manualmente. Se o objetivo didático
+for estudar sequence, a solução atual pode ser mantida, mas o INSERT ainda pode
+omitir ID graças ao DEFAULT da coluna.
+
+Não armazenar em_estoque se ele significa apenas estoque > 0. Essa propriedade
+pode ser calculada por Produto.emEstoque().
+
+PASSO 5 - Criar SchemaInitializer
+
+SchemaInitializer deve:
+
+1) abrir schema.sql via ClassLoader;
+2) verificar se o recurso existe;
+3) abrir uma conexão;
+4) desligar autoCommit;
+5) executar os comandos em ordem;
+6) efetuar commit em sucesso;
+7) efetuar rollback em falha;
+8) fechar conexão e leitor via try-with-resources.
+
+Para os comandos simples deste projeto, separar por ponto e vírgula é aceitável.
+Registrar a limitação: funções SQL, strings ou blocos que contenham ponto e
+vírgula exigirão um executor de script mais robusto.
+
+O initializer deve rodar uma vez em com.fabioperettig.Main. Em projetos que evoluam de verdade,
+migrações versionadas são preferíveis, mas não são necessárias para este estudo.
+
+PASSO 6 - Modelar as entidades
+
+Cliente:
+
+- Long id;
+- String codigo;
+- String nome.
+
+Produto:
+
+- Long id;
+- String codigo;
+- String nome;
+- BigDecimal preco;
+- int estoque;
+- método boolean emEstoque() retornando estoque > 0.
+
+Definir construtores para criação e reconstrução do banco. Evitar setters que
+permitam estados inválidos ou, no mínimo, centralizar validações no service.
+equals/hashCode não deve depender de campos mutáveis sem uma decisão consciente.
+
+PASSO 7 - Definir contratos de repository/DAO
+
+Um contrato base possível:
+
+interface CrudRepository<T, ID> {
+    T inserir(T entidade);
+    boolean atualizar(T entidade);
+    Optional<T> buscarPorId(ID id);
+    List<T> buscarTodos();
+    boolean excluirPorId(ID id);
+}
+
+Contratos específicos acrescentam consultas de negócio:
+
+interface ClienteRepository extends CrudRepository<Cliente, Long> {
+    Optional<Cliente> buscarPorCodigo(String codigo);
+    boolean existePorCodigo(String codigo);
+}
+
+interface ProdutoRepository extends CrudRepository<Produto, Long> {
+    Optional<Produto> buscarPorCodigo(String codigo);
+    List<Produto> buscarComEstoque();
+}
+
+O contrato não deve declarar throws Exception. A implementação JDBC converte
+SQLException em DataAccessException, preservando a causa original.
+
+PASSO 8 - Isolar o mapeamento de ResultSet
+
+Criar uma interface Java simples:
+
+interface RowMapper<T> {
+    T map(ResultSet resultSet) throws SQLException;
+}
+
+Cada DAO concreto define como criar sua entidade. Assim, buscar() e
+buscarTodos() usam o mesmo mapeamento, eliminando duplicação e divergência.
+
+Exemplo conceitual para Produto:
+
+return new Produto(
+    rs.getLong("id"),
+    rs.getString("codigo"),
+    rs.getString("nome"),
+    rs.getBigDecimal("preco"),
+    rs.getInt("estoque")
+);
+
+PASSO 9 - Criar a base JDBC com Template Method
+
+AbstractJdbcRepository deve centralizar somente comportamento realmente comum:
+
+- abrir e fechar Connection;
+- preparar Statement;
+- associar parâmetros por callbacks/métodos abstratos;
+- executar update;
+- ler zero, uma ou várias linhas;
+- pedir e ler chave gerada;
+- converter SQLException em DataAccessException.
+
+Os DAOs concretos fornecem:
+
+- SQL_INSERT;
+- SQL_UPDATE;
+- SQL_SELECT_BY_ID;
+- SQL_SELECT_ALL;
+- SQL_DELETE_BY_ID;
+- bindInsert;
+- bindUpdate;
+- mapRow.
+
+Evitar gerar SQL por nome de tabela recebido externamente. Nomes de tabela e
+coluna não podem ser parametrizados por PreparedStatement e devem ser constantes
+controladas pelo código.
+
+Uma alternativa ainda mais flexível é JdbcExecutor por composição, com métodos
+queryOne, queryList e update. Para este projeto educacional, uma classe base
+pequena com Template Method é suficiente. Se as entidades passarem a ter SQL
+muito diferente, preferir composição a uma herança cheia de condições.
+
+PASSO 10 - Implementar JdbcClienteRepository
+
+Usar SQL explícito, por exemplo:
+
+- INSERT INTO tb_cliente (codigo, nome) VALUES (?, ?)
+- SELECT id, codigo, nome FROM tb_cliente WHERE id = ?
+- SELECT id, codigo, nome FROM tb_cliente WHERE codigo = ?
+- SELECT id, codigo, nome FROM tb_cliente ORDER BY id
+- UPDATE tb_cliente SET codigo = ?, nome = ? WHERE id = ?
+- DELETE FROM tb_cliente WHERE id = ?
+
+No INSERT, criar o PreparedStatement com RETURN_GENERATED_KEYS, ler a chave e
+retornar Cliente com id preenchido. Verificar sempre o número de linhas afetadas.
+
+PASSO 11 - Implementar JdbcProdutoRepository
+
+Aplicar o mesmo ciclo, alterando SQL, parâmetros e mapRow. Usar:
+
+- setBigDecimal/getBigDecimal para preço;
+- setInt/getInt para estoque;
+- colunas explícitas;
+- WHERE estoque > 0 para buscarComEstoque().
+
+Não duplicar o mapeamento em buscarPorId, buscarPorCodigo e buscarTodos.
+
+PASSO 12 - Criar regras de validação no service
+
+ClienteService deve, no mínimo:
+
+- rejeitar código nulo, vazio ou com mais de 20 caracteres;
+- rejeitar nome nulo, vazio ou com mais de 50 caracteres;
+- impedir código duplicado;
+- exigir que a entidade exista antes de alterar/excluir;
+- normalizar espaços conforme a regra escolhida;
+- não expor SQLException.
+
+ProdutoService deve, no mínimo:
+
+- aplicar as validações de código e nome;
+- rejeitar preço nulo ou negativo;
+- rejeitar estoque negativo;
+- impedir código duplicado;
+- oferecer operação de entrada/saída de estoque sem permitir saldo negativo.
+
+O banco continua com UNIQUE e CHECK. Validação no service melhora a mensagem;
+restrição no banco garante integridade contra concorrência. Em caso de corrida,
+o código deve reconhecer o SQLState de violação única do PostgreSQL e traduzi-lo
+para CodigoDuplicadoException.
+
+PASSO 13 - Implementar services com injeção pelo construtor
+
+Exemplo conceitual:
+
+final class ClienteService {
+    private final ClienteRepository repository;
+
+    ClienteService(ClienteRepository repository) {
+        this.repository = repository;
+    }
+
+    Cliente cadastrar(String codigo, String nome) {
+        // validar, verificar duplicidade e inserir
+    }
+}
+
+Não chamar new JdbcClienteRepository() dentro do service. Receber a interface no
+construtor permite teste unitário e reduz acoplamento.
+
+Não criar interfaces para services apenas por hábito. Elas são úteis quando há
+mais de uma implementação ou quando representam uma fronteira necessária; caso
+contrário, uma classe final injetável é suficiente.
+
+PASSO 14 - Definir transações na camada de caso de uso
+
+Um CRUD de uma única instrução pode usar autoCommit. Uma operação que altera
+mais de um registro deve usar a mesma Connection:
+
+1) abrir Connection;
+2) setAutoCommit(false);
+3) executar todas as alterações;
+4) commit se tudo funcionar;
+5) rollback em qualquer falha;
+6) restaurar/fechar a conexão.
+
+Exemplo: baixar estoque e criar um registro de venda não pode confirmar apenas
+metade da operação.
+
+Para manter o service desacoplado de JDBC, introduzir um TransactionManager ou
+UnitOfWork. Em uma primeira versão somente com CRUD independente, deixar esse
+componente preparado, mas implementá-lo quando surgir o primeiro caso de uso
+multioperação. Não espalhar commit/rollback pelos controllers.
+
+PASSO 15 - Criar DTOs de entrada e saída
+
+DTOs evitam que a camada de apresentação altere entidades diretamente. Records
+Java 17 são adequados:
+
+- CriarClienteRequest(codigo, nome);
+- ClienteResponse(id, codigo, nome);
+- CriarProdutoRequest(codigo, nome, preco, estoque);
+- ProdutoResponse(id, codigo, nome, preco, estoque, emEstoque).
+
+O campo emEstoque do response é calculado, não persistido.
+
+PASSO 16 - Criar controllers Java puros
+
+ClienteController e ProdutoController devem:
+
+- receber DTOs ou valores já convertidos;
+- chamar somente o service correspondente;
+- converter entidade em response;
+- traduzir exceções de negócio para mensagens/resultados de apresentação;
+- nunca montar SQL ou abrir Connection.
+
+Exemplo de métodos:
+
+- ClienteResponse cadastrar(CriarClienteRequest request);
+- ClienteResponse buscarPorCodigo(String codigo);
+- List<ClienteResponse> listar();
+- ClienteResponse atualizar(Long id, AtualizarClienteRequest request);
+- void excluir(Long id).
+
+Controller não significa obrigatoriamente REST. Para manter Java puro, com.fabioperettig.Main
+pode ter um menu de console que chama esses controllers. Se no futuro houver
+HTTP, o controller/adaptador HTTP muda, enquanto service e repositories ficam
+iguais. A persistência continuará em JDBC.
+
+PASSO 17 - Montar dependências em com.fabioperettig.Main
+
+com.fabioperettig.Main funciona como composition root. Ordem sugerida:
+
+1) carregar DatabaseConfig;
+2) criar ConnectionFactory;
+3) executar SchemaInitializer uma vez;
+4) criar JdbcClienteRepository e JdbcProdutoRepository;
+5) injetá-los em ClienteService e ProdutoService;
+6) injetar services nos controllers;
+7) iniciar menu/fluxo da aplicação;
+8) capturar apenas falhas de topo e exibir mensagem segura.
+
+Não usar singletons globais para simular injeção de dependência.
+
+PASSO 18 - Criar testes unitários de service
+
+Usar implementações fake em memória de ClienteRepository e ProdutoRepository.
+Isso continua sem framework de persistência e permite testar rapidamente:
+
+- campos obrigatórios;
+- limites de tamanho;
+- código duplicado;
+- preço e estoque inválidos;
+- entidade inexistente;
+- entrada e saída de estoque;
+- chamadas corretas ao repository.
+
+Esses testes não abrem conexão e não dependem da ordem de execução.
+
+PASSO 19 - Criar testes unitários de controller
+
+Injetar service/fake apropriado e verificar:
+
+- conversão request -> chamada de service;
+- conversão entidade -> response;
+- mensagens de validação e não encontrado;
+- ausência de detalhes SQL na resposta.
+
+PASSO 20 - Criar testes de integração JDBC
+
+Executar contra PostgreSQL exclusivo de teste. Cada teste deve seguir:
+
+Arrange:
+- confirmar o banco de teste;
+- iniciar transação ou inserir dados com código único;
+
+Act:
+- chamar o repository real;
+
+Assert:
+- buscar novamente no banco;
+- conferir todas as colunas e quantidade de linhas;
+
+Cleanup:
+- rollback da transação ou limpeza em finally/@AfterEach.
+
+Casos mínimos de integração por entidade:
+
+- inserir retorna ID e persiste dados;
+- buscar existente;
+- buscar inexistente retorna Optional.empty();
+- atualizar realmente altera o banco;
+- excluir remove o mesmo ID consultado;
+- listar funciona sem pressupor que o banco começa totalmente vazio;
+- código duplicado viola a regra;
+- preço/estoque inválidos violam CHECK;
+- caracteres acentuados são preservados.
+
+Não depender de uma suíte manual para definir ordem. Cada teste deve funcionar
+sozinho e em qualquer ordem.
+
+PASSO 21 - Separar tipos de teste no Maven
+
+Convenção sugerida:
+
+- *Test.java: testes unitários, executados por Surefire;
+- *IT.java: testes de integração, executados por Failsafe ou perfil específico.
+
+Assim, mvn test pode ser rápido e não tocar o banco, enquanto um comando/perfil
+de integração exige configuração explícita do PostgreSQL de teste.
+
+PASSO 22 - Executar validação final
+
+Checklist de execução:
+
+1) compilar com Java 17;
+2) executar testes unitários;
+3) criar banco PostgreSQL exclusivo de integração;
+4) exportar variáveis TEST_DB_*;
+5) executar testes de integração;
+6) executar a com.fabioperettig.Main com DB_* de desenvolvimento;
+7) cadastrar, consultar, atualizar, listar e excluir Cliente;
+8) repetir o ciclo com Produto;
+9) reiniciar a aplicação e confirmar que o schema é idempotente;
+10) simular entrada inválida e indisponibilidade do banco;
+11) confirmar que nenhuma senha aparece em log ou Git.
+
+
+9. FATORAÇÃO RECOMENDADA: O QUE CENTRALIZAR E O QUE NÃO CENTRALIZAR
+--------------------------------------------------------------------
+
+Centralizar:
+
+- propriedade e ciclo de vida de recursos JDBC;
+- transformação de SQLException;
+- queryOne/queryList/update e leitura de chave gerada;
+- contrato RowMapper;
+- inicialização do schema;
+- validações repetidas, como texto obrigatório e limite de tamanho;
+- montagem de dependências em com.fabioperettig.Main.
+
+Manter específico por entidade:
+
+- nomes e colunas das consultas;
+- associação dos parâmetros;
+- mapRow;
+- consultas específicas, como produtos com estoque;
+- regras de negócio de Cliente ou Produto.
+
+Evitar:
+
+- uma classe genérica que descubra colunas por reflexão;
+- anotações próprias para imitar JPA;
+- SQL construído a partir de texto vindo do usuário;
+- uma superclasse com muitos ifs por tipo de entidade;
+- service que apenas repassa todas as chamadas sem validar ou coordenar nada;
+- controller que acessa DAO diretamente.
+
+A meta da fatoração não é eliminar toda repetição visual. SQL de entidades
+diferentes deve permanecer legível. A meta é ter um único ciclo confiável de
+gerenciamento JDBC e uma única implementação de cada regra.
+
+
+10. TRATAMENTO DE ERROS RECOMENDADO
+--------------------------------------------------------------------
+
+Camada JDBC:
+
+- captura SQLException;
+- inclui operação e entidade na mensagem, sem incluir senha;
+- preserva SQLException como cause;
+- traduz restrições conhecidas quando necessário;
+- lança DataAccessException.
+
+Service:
+
+- lança ValidacaoException para entrada inválida;
+- lança EntidadeNaoEncontradaException;
+- lança CodigoDuplicadoException;
+- decide rollback de casos de uso transacionais.
+
+Controller:
+
+- converte falhas esperadas em resposta/mensagem compreensível;
+- não mostra stack trace ou SQL ao usuário final;
+- deixa falha inesperada chegar ao tratamento global da aplicação.
+
+
+11. DECISÕES IMPORTANTES ANTES DE CODIFICAR
+--------------------------------------------------------------------
+
+1) Identificador das operações externas
+
+Recomendação: usar id técnico para update/delete e manter codigo como chave de
+negócio única para pesquisa. Alterar código não deve mudar a identidade.
+
+2) Disponibilidade do produto
+
+Recomendação: derivar de estoque > 0. Se houver no futuro bloqueio, produto
+desativado ou venda sem estoque, criar um status com significado próprio.
+
+3) Estratégia de configuração
+
+Recomendação: variáveis do sistema em produção/desenvolvimento e variáveis TEST
+separadas. Não manter database.properties inativo.
+
+4) Criação de schema
+
+Recomendação didática: SchemaInitializer idempotente em startup. Para evolução
+com histórico de versões, adotar migrações versionadas em uma fase posterior.
+
+5) Tipo de controller
+
+Recomendação inicial: controller de aplicação chamado por menu de console. Ele
+permite estudar as camadas sem introduzir servidor web. Um adaptador HTTP pode
+ser acrescentado depois sem mudar JDBC ou regras de negócio.
+
+
+12. ORDEM DE IMPLEMENTAÇÃO EM ENTREGAS PEQUENAS
+--------------------------------------------------------------------
+
+Entrega 1 - Infraestrutura
+
+- Maven/Java 17;
+- configuração única;
+- ConnectionFactory retornando conexão nova;
+- schema.sql e SchemaInitializer;
+- teste simples de conexão somente no banco de teste.
+
+Entrega 2 - Cliente com JDBC
+
+- entidade Cliente;
+- ClienteRepository;
+- base JDBC/RowMapper;
+- JdbcClienteRepository;
+- integração completa de Cliente.
+
+Entrega 3 - Produto com JDBC
+
+- entidade Produto com BigDecimal;
+- ProdutoRepository;
+- JdbcProdutoRepository;
+- integração completa de Produto.
+
+Entrega 4 - Regras de negócio
+
+- exceções;
+- ClienteService e ProdutoService;
+- testes unitários com repositories fake;
+- operações de estoque.
+
+Entrega 5 - Apresentação
+
+- DTOs;
+- controllers;
+- testes de controller;
+- com.fabioperettig.Main/menu e composição manual.
+
+Entrega 6 - Robustez
+
+- TransactionManager quando surgir caso multioperação;
+- separação Surefire/Failsafe;
+- logs sem segredos;
+- documentação de instalação e execução.
+
+
+13. CRITÉRIOS DE ACEITE DO NOVO PROJETO
+--------------------------------------------------------------------
+
+[ ] Persistência usa JDBC, PreparedStatement e PostgreSQL diretamente.
+[ ] Não existe JPA, Hibernate, Spring Data ou ORM.
+[ ] Toda conexão aberta tem proprietário e try-with-resources.
+[ ] Não existe Connection global compartilhada.
+[ ] Schema é inicializado antes do primeiro CRUD, apenas no startup.
+[ ] Configuração real usada pelo código está documentada.
+[ ] Senhas não são versionadas nem impressas.
+[ ] Produto usa BigDecimal para preço.
+[ ] Estoque e preço não aceitam valores negativos.
+[ ] emEstoque tem uma única fonte de verdade.
+[ ] INSERT devolve ou atribui o ID gerado.
+[ ] Consultas listam colunas explicitamente.
+[ ] mapRow não é duplicado entre consultas da mesma entidade.
+[ ] DAO lança exceção de persistência coerente, não Exception genérica.
+[ ] Service contém validações e regras de negócio.
+[ ] Controller não conhece JDBC/DAO concreto.
+[ ] Dependências são recebidas por construtor.
+[ ] Testes unitários não acessam banco.
+[ ] Testes JDBC usam banco exclusivo e são independentes.
+[ ] Update e delete são conferidos por nova consulta ao banco.
+[ ] O projeto funciona mesmo quando a primeira ação é uma consulta.
+
+
+14. CONCLUSÃO
+--------------------------------------------------------------------
+
+O projeto atual cumpre bem o objetivo inicial de demonstrar CRUD com JDBC,
+PreparedStatement, PostgreSQL, Generics e uma primeira abstração DAO. A evolução
+mais importante não é acrescentar mais herança, mas definir corretamente os
+limites e o ciclo de vida de cada responsabilidade.
+
+A nova versão deve manter o JDBC visível na infraestrutura, retornar uma conexão
+nova por operação, inicializar o schema no startup, usar try-with-resources,
+BigDecimal e testes de integração isolados. A service passa a concentrar regras
+e transações; o controller passa a organizar entrada e saída; com.fabioperettig.Main apenas monta
+as dependências e inicia a aplicação.
+
+Com essa estrutura, o projeto continua pequeno e didático, mas fica mais seguro,
+testável, consistente e preparado para receber novos casos de uso sem duplicar o
+ciclo JDBC em cada DAO.
