@@ -3,8 +3,9 @@ package com.fabioperettig.domain;
 public class Client {
 
     private Long id;
-    private String code;
     private String name;
+    private String cpf;
+    private String contact;
 
     public Long getId() {
         return id;
@@ -14,19 +15,27 @@ public class Client {
         this.id = id;
     }
 
-    public String getCode() {
-        return code;
-    }
-
-    public void setCode(String code) {
-        this.code = code;
-    }
-
     public String getName() {
         return name;
     }
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public String getCpf() {
+        return cpf;
+    }
+
+    public void setCpf(String cpf) {
+        this.cpf = cpf;
+    }
+
+    public String getContact() {
+        return contact;
+    }
+
+    public void setContact(String contact) {
+        this.contact = contact;
     }
 }
