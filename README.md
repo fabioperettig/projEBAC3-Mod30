@@ -17,11 +17,13 @@ Este checkpoint contém a base da camada de persistência:
 - `AbstractDAO` com o ciclo JDBC compartilhado;
 - `ClientDAO` e `ProductDAO` com SQL e mapeamentos específicos;
 - `ConnectionFactory` que entrega novas conexões;
+- `DatabaseConfig` para carregar credenciais de desenvolvimento e teste;
+- `SchemaInitializer` para preparar as tabelas antes do uso;
 - `DataAccessException` para falhas de persistência;
 - dependência DotEnv e arquivo `.env` local ignorado pelo Git.
 
-O projeto compila, mas ainda não possui testes automatizados nem inicialização
-do schema durante a execução.
+O ambiente de integração possui um teste automatizado que valida a conexão com
+o PostgreSQL de testes e a criação das tabelas dos DAOs.
 
 ## Tecnologias
 
@@ -84,8 +86,8 @@ Preço e estoque não podem ser negativos segundo as constraints do schema.
 
 ## Configuração local
 
-O banco PostgreSQL deve ser criado fora da aplicação. Os schemas do projeto
-criarão as sequências e tabelas dentro desse banco em uma etapa futura.
+O banco PostgreSQL deve ser criado fora da aplicação. O `SchemaInitializer`
+cria as sequências e tabelas dentro do banco configurado.
 
 Crie um arquivo `.env` na raiz do projeto:
 
@@ -99,7 +101,7 @@ O `.env` contém dados locais e não deve ser enviado ao Git. A futura
 `DatabaseConfig` será responsável por carregar esses valores com DotEnv e
 entregá-los à `ConnectionFactory`.
 
-Para testes de integração, será utilizado um banco separado, evitando que os
+Para testes de integração, é utilizado um banco separado, evitando que os
 testes alterem dados de desenvolvimento:
 
 ```text
@@ -114,8 +116,12 @@ TEST_DB_PASSWORD=sua_senha
 mvn test
 ```
 
-No checkpoint atual, esse comando valida a compilação. Os testes JUnit ainda
-serão implementados.
+Esse comando também executa `DatabaseEnvironmentTest`, que valida a conexão com
+o banco de testes e confirma a existência de `tb_client` e `tb_product`.
+
+A classe-base `DaoIntegrationTestSupport` inicializa o schema e limpa as duas
+tabelas antes e depois de cada teste DAO. Ela utiliza somente as variáveis
+`TEST_DB_*` e rejeita uma URL de testes igual à URL de desenvolvimento.
 
 ## Etapas do projeto
 
@@ -126,9 +132,9 @@ serão implementados.
 - [x] Implementar `ClientDAO` e `ProductDAO`.
 - [x] Criar `ConnectionFactory` e `DataAccessException`.
 - [x] Adicionar DotEnv e proteger o `.env` no Git.
-- [ ] Criar `DatabaseConfig` para carregar o `.env`.
-- [ ] Criar `SchemaInitializer` para executar os schemas uma vez.
-- [ ] Criar banco PostgreSQL exclusivo para testes.
+- [x] Criar `DatabaseConfig` para carregar o `.env`.
+- [x] Criar `SchemaInitializer` para executar os schemas uma vez.
+- [x] Criar e validar banco PostgreSQL exclusivo para testes.
 - [ ] Implementar testes de integração dos DAOs.
 - [ ] Criar services com validações e regras de negócio.
 - [ ] Criar DTOs e controllers.
@@ -140,4 +146,3 @@ serão implementados.
 Credenciais reais não devem ser escritas no código, adicionadas aos resources
 ou enviadas ao repositório. O arquivo `.env` deve permanecer apenas no ambiente
 local de cada desenvolvedor.
-
