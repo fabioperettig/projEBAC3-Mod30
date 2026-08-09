@@ -9,8 +9,8 @@ preparar uma arquitetura em camadas.
 
 ## Estado atual
 
-Este checkpoint conclui a base da camada de persistência e seus testes de
-integração:
+Este checkpoint conclui o CRUD de clientes e produtos e inicia a expansão do
+domínio para vendas e estoque:
 
 - entidades `Client` e `Product`;
 - schemas PostgreSQL para clientes e produtos;
@@ -23,7 +23,10 @@ integração:
 - `DataAccessException` para falhas de persistência;
 - dependência DotEnv e arquivo `.env` local ignorado pelo Git;
 - factories para criação dos dados utilizados nos testes;
-- testes CRUD de integração para `ClientDAO` e `ProductDAO`.
+- testes CRUD de integração para `ClientDAO` e `ProductDAO`;
+- `SaleStatus`, com os estados da venda;
+- `SaleItem`, com quantidade, preço histórico e subtotal calculado;
+- `Sale`, responsável por itens, total e transições de estado.
 
 O ambiente automatizado valida a conexão com o PostgreSQL de testes, inicializa
 as tabelas e limpa os dados antes e depois de cada teste. Os testes dos DAOs
@@ -90,6 +93,32 @@ O CPF possui restrição de unicidade no banco.
 O código do produto possui restrição de unicidade. Preço e estoque não podem
 ser negativos segundo as constraints do schema.
 
+O saldo ainda está armazenado em `Product`, mas será extraído para a entidade
+`Stock` na próxima etapa, mantendo uma única fonte de verdade para o estoque.
+
+### Sale
+
+- `id` e código único;
+- cliente previamente persistido;
+- data da venda;
+- status `INITIATED`, `COMPLETED` ou `CANCELLED`;
+- coleção de itens indexada pelo ID do produto;
+- quantidade total e valor total calculados a partir dos itens.
+
+A venda só pode ser modificada enquanto estiver iniciada e não pode ser
+concluída sem itens. Produtos repetidos incrementam a quantidade do item
+existente em vez de criar duplicatas.
+
+### SaleItem
+
+- produto previamente persistido;
+- quantidade sempre positiva;
+- preço unitário capturado no momento da inclusão;
+- subtotal calculado por preço unitário e quantidade.
+
+O preço unitário permanece imutável para preservar o valor histórico da venda,
+mesmo que o preço atual do produto seja alterado posteriormente.
+
 ## Configuração local
 
 O banco PostgreSQL deve ser criado fora da aplicação. O `SchemaInitializer`
@@ -133,7 +162,7 @@ tabelas antes e depois de cada teste DAO. Ela utiliza somente as variáveis
 
 ## Etapas do projeto
 
-- [x] Criar as entidades de domínio.
+- [x] Criar as entidades de domínio `Client` e `Product`.
 - [x] Criar os schemas de cliente e produto.
 - [x] Definir a interface genérica de CRUD.
 - [x] Implementar o ciclo JDBC no `AbstractDAO`.
@@ -145,6 +174,10 @@ tabelas antes e depois de cada teste DAO. Ela utiliza somente as variáveis
 - [x] Criar e validar banco PostgreSQL exclusivo para testes.
 - [x] Implementar factories para os dados dos testes.
 - [x] Implementar testes de integração dos DAOs.
+- [x] Modelar `SaleStatus`, `SaleItem` e `Sale`.
+- [ ] Criar a entidade `Stock` e separar o saldo de `Product`.
+- [ ] Criar schemas de estoque, venda e itens com chaves estrangeiras.
+- [ ] Implementar persistência transacional de vendas e estoque.
 - [ ] Criar services com validações e regras de negócio.
 - [ ] Criar DTOs e controllers.
 - [ ] Montar as dependências e iniciar a aplicação pelo `Main`.

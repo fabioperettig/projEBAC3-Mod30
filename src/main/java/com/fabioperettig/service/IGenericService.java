@@ -1,9 +1,9 @@
-package com.fabioperettig.dao;
+package com.fabioperettig.service;
 
 import java.util.List;
 import java.util.Optional;
 
-public interface IGenericDAO<T, ID> {
+public interface IGenericService<T, ID> {
     T create(T entity);
     Optional<T> findById(ID id);
     List<T> findAll();
