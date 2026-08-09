@@ -15,7 +15,7 @@ public final class ClientTestFactory {
     private ClientTestFactory() {
     }
 
-    public static String randomName() {
+    private static String randomName() {
         Random random = new Random();
         int index = random.nextInt(NAMES.size());
 

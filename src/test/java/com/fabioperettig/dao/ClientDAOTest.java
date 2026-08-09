@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Optional;
 
 public class ClientDAOTest  extends DaoIntegrationTestSupport{
@@ -49,8 +50,58 @@ public class ClientDAOTest  extends DaoIntegrationTestSupport{
 
     }
 
+    @Test
+    void shouldFindAll(){
+        Client cClient1 = clientDAO.create(ClientTestFactory.create("12345678901"));
+        Client cClient2 = clientDAO.create(ClientTestFactory.create("23456789012"));
+        Client cClient3 = clientDAO.create(ClientTestFactory.create("34567890123"));
 
-    ///Dry
+        List<Client> clientResult = clientDAO.findAll();
+
+        Assertions.assertNotNull(clientResult);
+        Assertions.assertEquals(3, clientResult.size());
+        Assertions.assertFalse(clientResult.isEmpty());
+    }
+
+    @Test
+    void shouldUpdate() {
+        Client createdClient = clientDAO.create(ClientTestFactory.create("12345678901"));
+
+        String originalCpf = createdClient.getCpf();
+        String originalContact = createdClient.getContact();
+        String newName = "Updated New Awesome Name";
+
+        Assertions.assertNotEquals(newName, createdClient.getName());
+
+        createdClient.setName(newName);
+        boolean updated = clientDAO.update(createdClient);
+
+        Client persistedClient = clientDAO.findById(createdClient.getId()).orElseThrow();
+
+        Assertions.assertTrue(updated);
+        Assertions.assertEquals(newName,persistedClient.getName());
+        Assertions.assertEquals(originalCpf,persistedClient.getCpf());
+        Assertions.assertEquals(originalContact,persistedClient.getContact());
+    }
+
+    @Test
+    void shouldDeleteById(){
+        Client createdClient = clientDAO.create(ClientTestFactory.create("12345678901"));
+        Long clientId = createdClient.getId();
+
+        Assertions.assertTrue(clientDAO.findById(clientId).isPresent());
+
+        boolean deleted = clientDAO.deleteById(clientId);
+        Optional<Client> deletedClient = clientDAO.findById(clientId);
+
+        Assertions.assertTrue(deleted);
+        Assertions.assertTrue(deletedClient.isEmpty());
+    }
+
+    /**
+     * @deprecated
+     * Replaced by {@link com.fabioperettig.factory.ClientTestFactory#create(String)}.
+     */
     @Deprecated
     private Client newClient(String cpf) {
         Client client = new Client();
