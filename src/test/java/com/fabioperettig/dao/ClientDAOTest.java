@@ -52,9 +52,9 @@ public class ClientDAOTest  extends DaoIntegrationTestSupport{
 
     @Test
     void shouldFindAll(){
-        Client cClient1 = clientDAO.create(ClientTestFactory.create("12345678901"));
-        Client cClient2 = clientDAO.create(ClientTestFactory.create("23456789012"));
-        Client cClient3 = clientDAO.create(ClientTestFactory.create("34567890123"));
+        clientDAO.create(ClientTestFactory.create("12345678901"));
+        clientDAO.create(ClientTestFactory.create("23456789012"));
+        clientDAO.create(ClientTestFactory.create("34567890123"));
 
         List<Client> clientResult = clientDAO.findAll();
 

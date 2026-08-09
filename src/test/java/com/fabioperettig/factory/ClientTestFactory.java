@@ -12,8 +12,7 @@ public final class ClientTestFactory {
             "Vlad", "Nancy", "Fabio"
     );
 
-    private ClientTestFactory() {
-    }
+    private ClientTestFactory() {}
 
     private static String randomName() {
         Random random = new Random();
@@ -24,10 +23,9 @@ public final class ClientTestFactory {
 
     public static Client create(String cpf) {
         Client client = new Client();
-        String sortName = randomName();
-        client.setName(sortName);
+        client.setName(randomName());
         client.setCpf(cpf);
-        client.setContact(String.format("%s@mail.com", sortName));
+        client.setContact(String.format("%s@mail.com", client.getName()));
 
         return client;
     }

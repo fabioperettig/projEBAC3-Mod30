@@ -9,7 +9,8 @@ preparar uma arquitetura em camadas.
 
 ## Estado atual
 
-Este checkpoint contém a base da camada de persistência:
+Este checkpoint conclui a base da camada de persistência e seus testes de
+integração:
 
 - entidades `Client` e `Product`;
 - schemas PostgreSQL para clientes e produtos;
@@ -20,10 +21,13 @@ Este checkpoint contém a base da camada de persistência:
 - `DatabaseConfig` para carregar credenciais de desenvolvimento e teste;
 - `SchemaInitializer` para preparar as tabelas antes do uso;
 - `DataAccessException` para falhas de persistência;
-- dependência DotEnv e arquivo `.env` local ignorado pelo Git.
+- dependência DotEnv e arquivo `.env` local ignorado pelo Git;
+- factories para criação dos dados utilizados nos testes;
+- testes CRUD de integração para `ClientDAO` e `ProductDAO`.
 
-O ambiente de integração possui um teste automatizado que valida a conexão com
-o PostgreSQL de testes e a criação das tabelas dos DAOs.
+O ambiente automatizado valida a conexão com o PostgreSQL de testes, inicializa
+as tabelas e limpa os dados antes e depois de cada teste. Os testes dos DAOs
+cobrem criação, busca por ID, listagem, atualização e exclusão.
 
 ## Tecnologias
 
@@ -78,11 +82,13 @@ O CPF possui restrição de unicidade no banco.
 
 - `id`;
 - `name`;
+- `code`;
 - `price`, representado por `BigDecimal`;
 - `stock`;
 - disponibilidade calculada por `isInStock()`.
 
-Preço e estoque não podem ser negativos segundo as constraints do schema.
+O código do produto possui restrição de unicidade. Preço e estoque não podem
+ser negativos segundo as constraints do schema.
 
 ## Configuração local
 
@@ -97,9 +103,8 @@ DB_USER=postgres
 DB_PASSWORD=sua_senha
 ```
 
-O `.env` contém dados locais e não deve ser enviado ao Git. A futura
-`DatabaseConfig` será responsável por carregar esses valores com DotEnv e
-entregá-los à `ConnectionFactory`.
+O `.env` contém dados locais e não deve ser enviado ao Git. A `DatabaseConfig`
+carrega esses valores com DotEnv e os entrega à `ConnectionFactory`.
 
 Para testes de integração, é utilizado um banco separado, evitando que os
 testes alterem dados de desenvolvimento:
@@ -116,8 +121,11 @@ TEST_DB_PASSWORD=sua_senha
 mvn test
 ```
 
-Esse comando também executa `DatabaseEnvironmentTest`, que valida a conexão com
-o banco de testes e confirma a existência de `tb_client` e `tb_product`.
+Esse comando executa:
+
+- `DatabaseEnvironmentTest`, que valida a conexão e a existência das tabelas;
+- `ClientDAOTest`, com o CRUD de clientes;
+- `ProductDAOTest`, com o CRUD de produtos.
 
 A classe-base `DaoIntegrationTestSupport` inicializa o schema e limpa as duas
 tabelas antes e depois de cada teste DAO. Ela utiliza somente as variáveis
@@ -135,7 +143,8 @@ tabelas antes e depois de cada teste DAO. Ela utiliza somente as variáveis
 - [x] Criar `DatabaseConfig` para carregar o `.env`.
 - [x] Criar `SchemaInitializer` para executar os schemas uma vez.
 - [x] Criar e validar banco PostgreSQL exclusivo para testes.
-- [ ] Implementar testes de integração dos DAOs.
+- [x] Implementar factories para os dados dos testes.
+- [x] Implementar testes de integração dos DAOs.
 - [ ] Criar services com validações e regras de negócio.
 - [ ] Criar DTOs e controllers.
 - [ ] Montar as dependências e iniciar a aplicação pelo `Main`.
