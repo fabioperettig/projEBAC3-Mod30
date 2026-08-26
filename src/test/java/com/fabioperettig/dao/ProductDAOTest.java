@@ -29,7 +29,6 @@ public class ProductDAOTest extends DaoIntegrationTestSupport {
         Assertions.assertEquals(product.getName(), persistedProduct.getName());
         Assertions.assertEquals(product.getCode(), persistedProduct.getCode());
         Assertions.assertEquals(product.getPrice(), persistedProduct.getPrice());
-        Assertions.assertEquals(product.getStock(), persistedProduct.getStock());
 
     }
 
@@ -48,7 +47,6 @@ public class ProductDAOTest extends DaoIntegrationTestSupport {
         Assertions.assertEquals(cProduct2.getName(), foundProduct.getName());
         Assertions.assertEquals(cProduct2.getCode(), foundProduct.getCode());
         Assertions.assertEquals(cProduct2.getPrice(), foundProduct.getPrice());
-        Assertions.assertEquals(cProduct2.getStock(), foundProduct.getStock());
 
     }
 

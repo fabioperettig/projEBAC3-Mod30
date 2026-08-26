@@ -14,7 +14,8 @@ public final class SchemaInitializer {
 
     private static final List<String> SCHEMA_RESOURCES = List.of(
             "database/schemaClient.sql",
-            "database/schemaProduct.sql"
+            "database/schemaProduct.sql",
+            "database/schemaStock.sql"
     );
 
     private final ConnectionFactory connectionFactory;

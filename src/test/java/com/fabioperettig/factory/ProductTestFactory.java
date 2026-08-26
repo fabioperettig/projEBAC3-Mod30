@@ -30,7 +30,7 @@ public final class ProductTestFactory {
 
         BigDecimal price;
         
-        switch (randomName())  {
+        switch (name)  {
             case "Aquário Aventura de Poseidon" -> price = new BigDecimal("199.99");
             case "Cama Sono Napoleônico" -> price = new BigDecimal("1450.49");
             case "Tripé Dobrável Diamante" -> price = new BigDecimal("249.99");
@@ -51,7 +51,6 @@ public final class ProductTestFactory {
         product.setName(name);
         product.setCode(code);
         product.setPrice(priceFor(name));
-        product.setStock(50);
 
         return product;
     }

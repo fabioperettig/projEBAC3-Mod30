@@ -25,14 +25,14 @@ class DatabaseEnvironmentTest extends DaoIntegrationTestSupport {
                 SELECT COUNT(*)
                 FROM information_schema.tables
                 WHERE table_schema = 'public'
-                  AND table_name IN ('tb_client', 'tb_product')
+                  AND table_name IN ('tb_client', 'tb_product', 'tb_stock')
                 """;
 
         try (Connection connection = connectionFactory.getConnection();
              Statement statement = connection.createStatement();
              ResultSet resultSet = statement.executeQuery(sql)) {
             assertTrue(resultSet.next());
-            assertEquals(2, resultSet.getInt(1));
+            assertEquals(3, resultSet.getInt(1));
         }
     }
 }

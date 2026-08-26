@@ -22,7 +22,6 @@ public final class SaleItem {
         if (unitPrice.signum() < 0) {
             throw new IllegalArgumentException("Unit price cannot be negative");
         }
-
         this.quantity = quantity;
     }
 
@@ -57,7 +56,6 @@ public final class SaleItem {
                     "Amount must be smaller than current quantity"
             );
         }
-
         quantity -= amount;
     }
 

@@ -7,7 +7,6 @@ CREATE TABLE IF NOT EXISTS TB_PRODUCT (
     name_product VARCHAR(100) NOT NULL,
     code_product VARCHAR(8) NOT NULL,
     price_product NUMERIC(10, 2) NOT NULL CHECK (price_product >= 0),
-    stock_product INTEGER NOT NULL DEFAULT 0 CHECK (stock_product >= 0),
 
     CONSTRAINT PK_ID_PRODUCT PRIMARY KEY (id),
     CONSTRAINT UK_CODE_PRODUCT UNIQUE (code_product)

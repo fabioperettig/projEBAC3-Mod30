@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Optional;
 
-public class ClientDAOTest  extends DaoIntegrationTestSupport{
+public class ClientDAOTest extends DaoIntegrationTestSupport{
 
     private ClientDAO clientDAO;
 

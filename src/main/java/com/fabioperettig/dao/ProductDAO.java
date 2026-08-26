@@ -15,17 +15,16 @@ public class ProductDAO extends AbstractDAO<Product, Long> {
 
     ///SQL commands
     private static final String INSERT_SQL =
-            "INSERT INTO tb_product (name_product, code_product, price_product, stock_product) VALUES (?, ?, ?, ?)";
+            "INSERT INTO tb_product (name_product, code_product, price_product) VALUES (?, ?, ?)";
 
     private static final String FIND_BY_ID_SQL =
-            "SELECT id, name_product, code_product, price_product, stock_product FROM tb_product WHERE id = ?";
+            "SELECT id, name_product, code_product, price_product FROM tb_product WHERE id = ?";
 
     private static final String FIND_ALL_SQL =
-            "SELECT id, name_product, code_product, price_product, stock_product FROM tb_product ORDER BY id";
+            "SELECT id, name_product, code_product, price_product FROM tb_product ORDER BY id";
 
     private static final String UPDATE_SQL =
-            "UPDATE tb_product SET name_product = ?, code_product = ?, price_product = ?, stock_product = ? " +
-                    "WHERE id = ?";
+            "UPDATE tb_product SET name_product = ?, code_product = ?, price_product = ? WHERE id = ?";
 
     private static final String DELETE_BY_ID_SQL =
             "DELETE FROM tb_product WHERE id = ?";
@@ -62,7 +61,6 @@ public class ProductDAO extends AbstractDAO<Product, Long> {
         statement.setString(1, product.getName());
         statement.setString(2, product.getCode());
         statement.setBigDecimal(3, product.getPrice());
-        statement.setInt(4, product.getStock());
     }
 
     @Override
@@ -70,8 +68,7 @@ public class ProductDAO extends AbstractDAO<Product, Long> {
         statement.setString(1, product.getName());
         statement.setString(2, product.getCode());
         statement.setBigDecimal(3, product.getPrice());
-        statement.setInt(4, product.getStock());
-        statement.setLong(5, product.getId());
+        statement.setLong(4, product.getId());
     }
 
     @Override
@@ -87,7 +84,6 @@ public class ProductDAO extends AbstractDAO<Product, Long> {
         product.setName(resultSet.getString("name_product"));
         product.setCode(resultSet.getString("code_product"));
         product.setPrice(resultSet.getBigDecimal("price_product"));
-        product.setStock(resultSet.getInt("stock_product"));
 
         return product;
     }
