@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-public class ClientService implements IGenericService<Client, Long>{
+public class ClientService implements IGenericService<Client, Long> {
 
     private final IGenericDAO<Client, Long> clientDAO;
 
@@ -32,11 +32,11 @@ public class ClientService implements IGenericService<Client, Long>{
 
     @Override
     public boolean update(Client entity) {
-        return false;
+        return clientDAO.update(entity);
     }
 
     @Override
-    public boolean deleteById(Long aLong) {
-        return false;
+    public boolean deleteById(Long id) {
+        return clientDAO.deleteById(id);
     }
 }

@@ -16,9 +16,18 @@ public class ClientServiceTest {
     private ClientService service;
 
     @BeforeEach
-    void setUp(){
+    void setUp() {
         clientDAO = new FakeClientDAO();
         service = new ClientService(clientDAO);
+    }
+
+    @Test
+    void shouldRejectNullClientDAO() {
+        NullPointerException exception = Assertions.assertThrows(
+                NullPointerException.class, () -> new ClientService(null)
+        );
+
+        Assertions.assertEquals("Client DAO is required", exception.getMessage());
     }
 
     @Test
@@ -52,8 +61,8 @@ public class ClientServiceTest {
 
     @Test
     void shouldDelegateFindAllToDAO() {
-        Client firstClient = ClientTestFactory.create("12345678901");
-        Client secondClient = ClientTestFactory.create("23456789012");
+        Client firstClient = ClientTestFactory.create("34567890123");
+        Client secondClient = ClientTestFactory.create("45678901234");
 
         List<Client> expectedClients = List.of(firstClient, secondClient);
         clientDAO.clientsToFind = expectedClients;
@@ -63,12 +72,56 @@ public class ClientServiceTest {
         Assertions.assertSame(expectedClients, result);
     }
 
+    @Test
+    void shouldReturnTrueWhenClientIsUpdated() {
+        Client client = ClientTestFactory.create("56789012345");
+        clientDAO.updateResult = true;
+
+        boolean result = service.update(client);
+
+        Assertions.assertSame(client, clientDAO.receivedClientForUpdate);
+        Assertions.assertTrue(result);
+    }
+
+    @Test
+    void shouldReturnFalseWhenClientIsNotUpdated() {
+        Client client = ClientTestFactory.create("67890123456");
+        clientDAO.updateResult = false;
+
+        boolean result = service.update(client);
+
+        Assertions.assertSame(client, clientDAO.receivedClientForUpdate);
+        Assertions.assertFalse(result);
+    }
+
+    @Test
+    void shouldReturnTrueWhenClientIsDeleted() {
+        clientDAO.deleteResult = true;
+        boolean result = service.deleteById(10L);
+
+        Assertions.assertEquals(10L, clientDAO.receivedIdForDeletion);
+        Assertions.assertTrue(result);
+    }
+
+    @Test
+    void shouldReturnFalseWhenClientIsNotDeleted() {
+        clientDAO.deleteResult = false;
+        boolean result = service.deleteById(99L);
+
+        Assertions.assertEquals(99L, clientDAO.receivedIdForDeletion);
+        Assertions.assertFalse(result);
+    }
+
 
     private static class FakeClientDAO implements IGenericDAO<Client, Long> {
         private Client receivedClient;
-        private Long receivedId;
         private Client clientToFind;
+        private Client receivedClientForUpdate;
+        private Long receivedId;
+        private Long receivedIdForDeletion;
         private List<Client> clientsToFind = List.of();
+        private boolean updateResult;
+        private boolean deleteResult;
 
         @Override
         public Client create(Client entity) {
@@ -89,12 +142,14 @@ public class ClientServiceTest {
 
         @Override
         public boolean update(Client entity) {
-            throw new UnsupportedOperationException();
+            receivedClientForUpdate = entity;
+            return updateResult;
         }
 
         @Override
-        public boolean deleteById(Long aLong) {
-            throw new UnsupportedOperationException();
+        public boolean deleteById(Long id) {
+            receivedIdForDeletion = id;
+            return deleteResult;
         }
     }
 

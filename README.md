@@ -1,47 +1,39 @@
-# projEBAC3 - Módulo 30
+![Java](https://img.shields.io/badge/java-%23ED8B00.svg?style=for-the-badge&logo=openjdk&logoColor=white)
+![Postgres](https://img.shields.io/badge/postgres-%23316192.svg?style=for-the-badge&logo=postgresql&logoColor=white)
+![Projeto Curso EBAC](https://img.shields.io/badge/Projeto--Curso--EBAC-navy?style=for-the-badge)
+
+# ☕ Projeto EBAC – Módulo 30
 
 Projeto de estudo desenvolvido em Java 17 para praticar persistência com JDBC e
 PostgreSQL, sem Spring, JPA, Hibernate ou outro ORM.
 
-O projeto está sendo reconstruído a partir de uma implementação JDBC antiga,
-com o objetivo de separar responsabilidades, reduzir repetição nos DAOs e
-preparar uma arquitetura em camadas.
+O código parte de uma implementação JDBC antiga e está sendo reorganizado em
+camadas, com responsabilidades bem definidas, DAOs reutilizáveis e testes
+automatizados.
 
-## Estado atual
+## 📍 Checkpoint atual
 
-Este checkpoint conclui o CRUD de clientes e produtos e inicia a expansão do
-domínio para vendas e estoque:
+| Camada | Concluído | Próximo passo |
+|---|---|---|
+| Domínio | `Client`, `Product`, `Stock`, `SaleItem`, `Sale` e `SaleStatus` | Evoluir as regras de estoque e venda |
+| Persistência | CRUD de clientes e produtos; schemas de cliente, produto e estoque | Persistir estoque e vendas |
+| Serviço | `ClientService` com todos os métodos do CRUD | Criar `ProductService` |
+| Testes | 25 testes de ambiente, integração e unidade | Cobrir os próximos services e DAOs |
 
-- entidades `Client` e `Product`;
-- schemas PostgreSQL para clientes e produtos;
-- contrato genérico de CRUD;
-- `AbstractDAO` com o ciclo JDBC compartilhado;
-- `ClientDAO` e `ProductDAO` com SQL e mapeamentos específicos;
-- `ConnectionFactory` que entrega novas conexões;
-- `DatabaseConfig` para carregar credenciais de desenvolvimento e teste;
-- `SchemaInitializer` para preparar as tabelas antes do uso;
-- `DataAccessException` para falhas de persistência;
-- dependência DotEnv e arquivo `.env` local ignorado pelo Git;
-- factories para criação dos dados utilizados nos testes;
-- testes CRUD de integração para `ClientDAO` e `ProductDAO`;
-- `SaleStatus`, com os estados da venda;
-- `SaleItem`, com quantidade, preço histórico e subtotal calculado;
-- `Sale`, responsável por itens, total e transições de estado.
+### Destaques deste checkpoint
 
-O ambiente automatizado valida a conexão com o PostgreSQL de testes, inicializa
-as tabelas e limpa os dados antes e depois de cada teste. Os testes dos DAOs
-cobrem criação, busca por ID, listagem, atualização e exclusão.
+- `AbstractDAO<T, ID>` concentra o fluxo JDBC comum do CRUD.
+- `ClientDAO` e `ProductDAO` mantêm apenas SQL, parâmetros e mapeamentos.
+- `Stock` separa o saldo da entidade `Product`.
+- `ClientService` delega o CRUD pelo contrato `IGenericDAO<Client, Long>`.
+- `ClientServiceTest` usa um DAO falso para testar o service sem banco.
+- O ambiente de integração inicializa e limpa o PostgreSQL de testes.
 
-## Tecnologias
+## 🧰 Tecnologias
 
-- Java 17;
-- Maven;
-- JDBC;
-- PostgreSQL;
-- DotEnv;
-- JUnit 6.
+`Java 17` · `Maven` · `JDBC` · `PostgreSQL` · `DotEnv` · `JUnit 6`
 
-## Arquitetura planejada
+## 🏗️ Arquitetura
 
 ```text
 Main / Controller
@@ -59,108 +51,93 @@ ConnectionFactory
    PostgreSQL
 ```
 
-O `AbstractDAO` implementa o algoritmo comum de `create`, `findById`,
-`findAll`, `update` e `deleteById`. Os DAOs concretos fornecem somente:
+O contrato `IGenericDAO<T, ID>` define `create`, `findById`, `findAll`, `update`
+e `deleteById`. O `AbstractDAO` implementa o ciclo JDBC desses métodos, enquanto
+os DAOs concretos fornecem:
 
-- comandos SQL;
-- associação dos parâmetros do `PreparedStatement`;
-- conversão de uma linha do `ResultSet` em uma entidade;
+- SQL específico da entidade;
+- parâmetros do `PreparedStatement`;
+- mapeamento do `ResultSet`;
 - leitura e atribuição do ID gerado.
 
-Uma explicação detalhada dessa classe está em
-[GUIA_ABSTRACT_DAO.md](GUIA_ABSTRACT_DAO.md).
+Veja a implementação comentada em [GUIA_ABSTRACT_DAO.md](GUIA_ABSTRACT_DAO.md).
 
-## Entidades
+## 🧩 Domínio
 
-### Client
+### `Client`
 
-- `id`;
-- `name`;
-- `cpf`;
-- `contact`.
+Representa o cliente com `id`, `name`, `cpf` e `contact`. O CPF é único no
+banco.
 
-O CPF possui restrição de unicidade no banco.
+### `Product`
 
-### Product
+Representa o produto com `id`, `name`, `code` e `price`. O código é único e o
+preço, armazenado como `BigDecimal`, não pode ser negativo.
 
-- `id`;
-- `name`;
-- `code`;
-- `price`, representado por `BigDecimal`;
-- `stock`;
-- disponibilidade calculada por `isInStock()`.
+### `Stock`
 
-O código do produto possui restrição de unicidade. Preço e estoque não podem
-ser negativos segundo as constraints do schema.
+Mantém a quantidade disponível de um produto já persistido. Permite aumentar e
+reduzir o saldo, rejeitando valores inválidos e estoque insuficiente.
 
-O saldo ainda está armazenado em `Product`, mas será extraído para a entidade
-`Stock` na próxima etapa, mantendo uma única fonte de verdade para o estoque.
+### `Sale` e `SaleItem`
 
-### Sale
+A venda mantém cliente, data, status e itens indexados pelo ID do produto. Ela
+calcula quantidade e valor total e só pode ser alterada enquanto estiver em
+`INITIATED`.
 
-- `id` e código único;
-- cliente previamente persistido;
-- data da venda;
-- status `INITIATED`, `COMPLETED` ou `CANCELLED`;
-- coleção de itens indexada pelo ID do produto;
-- quantidade total e valor total calculados a partir dos itens.
+Cada item registra uma quantidade positiva e preserva o preço unitário do
+momento da inclusão, mesmo que o preço atual do produto seja alterado.
 
-A venda só pode ser modificada enquanto estiver iniciada e não pode ser
-concluída sem itens. Produtos repetidos incrementam a quantidade do item
-existente em vez de criar duplicatas.
+## 🗄️ Banco de dados
 
-### SaleItem
+O banco deve existir antes da execução. O `SchemaInitializer` cria, em uma única
+transação, as estruturas abaixo:
 
-- produto previamente persistido;
-- quantidade sempre positiva;
-- preço unitário capturado no momento da inclusão;
-- subtotal calculado por preço unitário e quantidade.
+- `TB_CLIENT`;
+- `TB_PRODUCT`;
+- `TB_STOCK`.
 
-O preço unitário permanece imutável para preservar o valor histórico da venda,
-mesmo que o preço atual do produto seja alterado posteriormente.
+As credenciais são carregadas pela `DatabaseConfig` e cada operação obtém uma
+nova conexão pela `ConnectionFactory`.
 
-## Configuração local
+## ⚙️ Configuração local
 
-O banco PostgreSQL deve ser criado fora da aplicação. O `SchemaInitializer`
-cria as sequências e tabelas dentro do banco configurado.
-
-Crie um arquivo `.env` na raiz do projeto:
+Crie um `.env` na raiz do projeto com bancos separados para desenvolvimento e
+testes:
 
 ```text
 DB_URL=jdbc:postgresql://localhost:5432/projebac3_dev
 DB_USER=postgres
 DB_PASSWORD=sua_senha
-```
 
-O `.env` contém dados locais e não deve ser enviado ao Git. A `DatabaseConfig`
-carrega esses valores com DotEnv e os entrega à `ConnectionFactory`.
-
-Para testes de integração, é utilizado um banco separado, evitando que os
-testes alterem dados de desenvolvimento:
-
-```text
 TEST_DB_URL=jdbc:postgresql://localhost:5432/projebac3_test
 TEST_DB_USER=postgres
 TEST_DB_PASSWORD=sua_senha
 ```
 
-## Compilação
+O arquivo contém dados locais, está ignorado pelo Git e não deve ser enviado ao
+repositório. A configuração também rejeita o uso da mesma URL para os dois
+ambientes.
+
+## ✅ Testes
 
 ```bash
 mvn test
 ```
 
-Esse comando executa:
+| Suíte | Tipo | Testes |
+|---|---|---:|
+| `DatabaseEnvironmentTest` | Ambiente | 2 |
+| `ClientDAOTest` | Integração | 5 |
+| `ProductDAOTest` | Integração | 5 |
+| `StockTest` | Unidade | 4 |
+| `ClientServiceTest` | Unidade | 9 |
+| **Total** |  | **25** |
 
-- `DatabaseEnvironmentTest`, que valida a conexão e a existência das tabelas;
-- `ClientDAOTest`, com o CRUD de clientes;
-- `ProductDAOTest`, com o CRUD de produtos.
+`DaoIntegrationTestSupport` prepara o schema e limpa `TB_STOCK`, `TB_CLIENT` e
+`TB_PRODUCT` antes e depois de cada teste de integração.
 
-A classe-base `DaoIntegrationTestSupport` inicializa o schema e limpa as duas
-tabelas antes e depois de cada teste DAO. Ela utiliza somente as variáveis
-`TEST_DB_*` e rejeita uma URL de testes igual à URL de desenvolvimento.
-
-## Etapas do projeto
+## 🗺️ Roadmap
 
 - [x] Criar as entidades de domínio `Client` e `Product`.
 - [x] Criar os schemas de cliente e produto.
@@ -175,16 +152,23 @@ tabelas antes e depois de cada teste DAO. Ela utiliza somente as variáveis
 - [x] Implementar factories para os dados dos testes.
 - [x] Implementar testes de integração dos DAOs.
 - [x] Modelar `SaleStatus`, `SaleItem` e `Sale`.
-- [ ] Criar a entidade `Stock` e separar o saldo de `Product`.
-- [ ] Criar schemas de estoque, venda e itens com chaves estrangeiras.
+- [x] Criar `Stock` e separar o saldo de `Product`.
+- [x] Criar o schema de estoque com chave estrangeira para produto.
+- [x] Implementar e testar o `ClientService`.
+- [ ] Implementar e testar o `ProductService`.
+- [ ] Implementar persistência e serviço de estoque.
+- [ ] Criar os schemas de venda e itens.
 - [ ] Implementar persistência transacional de vendas e estoque.
-- [ ] Criar services com validações e regras de negócio.
+- [ ] Implementar services com as regras de negócio de venda.
 - [ ] Criar DTOs e controllers.
 - [ ] Montar as dependências e iniciar a aplicação pelo `Main`.
-- [ ] Criar testes unitários de services e controllers.
+- [ ] Criar testes dos próximos services e controllers.
 
-## Segurança
+## 🔐 Segurança
 
-Credenciais reais não devem ser escritas no código, adicionadas aos resources
-ou enviadas ao repositório. O arquivo `.env` deve permanecer apenas no ambiente
-local de cada desenvolvedor.
+Credenciais reais não devem ser escritas no código ou adicionadas aos resources.
+O `.env` deve permanecer somente no ambiente local de cada desenvolvedor.
+
+----
+
+### Fabio Peretti Guimarães | EBAC mod30 - PROJETO 03 | AGO 2026
