@@ -17,17 +17,17 @@ public class ClientService implements IGenericService<Client, Long>{
 
     @Override
     public Client create(Client entity) {
-        return null;
+        return clientDAO.create(entity);
     }
 
     @Override
-    public Optional<Client> findById(Long aLong) {
-        return Optional.empty();
+    public Optional<Client> findById(Long id) {
+        return clientDAO.findById(id);
     }
 
     @Override
     public List<Client> findAll() {
-        return List.of();
+        return clientDAO.findAll();
     }
 
     @Override
