@@ -32,7 +32,7 @@ public abstract class AbstractDAO<T, ID> implements IGenericDAO<T, ID> {
     protected abstract ID readGeneratedId(ResultSet generatedId) throws SQLException;
     protected abstract void setGeneratedId(T entity, ID generatedId);
 
-    ///Generic CRUD
+    ///Generic CRUD methods
     @Override
     public T create(T entity) {
         Objects.requireNonNull(entity, "Entity is required");
