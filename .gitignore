@@ -41,6 +41,6 @@ build/
 .env
 exemplo.sql
 exemplos.sql
-AULA.md
-DIRETRIZ.md
+ControllerDEFAULTExample.md
+exemplo-singletonDB.md
 README_EXEMPLO.MD
